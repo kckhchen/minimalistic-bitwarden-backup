@@ -1,4 +1,4 @@
-# Bitwarden Password Backup Tool
+# Minimalistic Bitwarden Password Backup Tool
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 ![Platform](https://img.shields.io/badge/platform-macOS-lightgrey)
@@ -6,6 +6,8 @@
 We all love [Bitwarden](https://bitwarden.com/). However, sometimes we just don't feel comfortable storing all the passwords on the cloud. Although Bitwarden stores local cache for 30 days when you go offline, it always gives a peace of mind if you know you have a local backup copy in your hard drive. Bitwarden Password Backup Tool does exactly that.
 
 This is a robust, automated shell script to backup your Bitwarden vault on macOS. It utilizes [bitwarden-cli](https://bitwarden.com/help/cli/) to authenticate and automatically store backups, exporting a **portable (password-protected)** JSON file that you can import back to Bitwarden or other supported password managers (e.g. KeePassXC). You can even set up reminders with [terminal-notifier](https://github.com/julienXX/terminal-notifier) to send notifications when it's time for backup.
+
+No docker, no tons of dependencies, no complexities. Just a simple, transparent, minimalistic shell-script backup tool for your local storage.
 
 ## Features
 
