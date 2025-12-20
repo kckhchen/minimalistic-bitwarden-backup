@@ -49,9 +49,10 @@ brew install bitwarden-cli terminal-notifier
 
 ### Configuring `.env` file
 
-First, clone this repository:
-```
-git clone https://github.com/kckhchen/bitwarden-backup.git
+First, clone this repository and go to the project directory:
+```bash
+git clone https://github.com/kckhchen/Minimalistic-Bitwarden-Backup.git
+cd Minimalistic-Bitwarden-Backup
 ```
 
 Copy the `.env.example` file in the repository and rename it `.env` before configuring. Log in to Bitwarden on your web browser and follow the steps from the [official documentation](https://bitwarden.com/help/personal-api-key/#get-your-personal-api-key) to get your API key. Paste your `client_id` and `client_secret` in the corresponding fields. Other configurable variables are listed here:
