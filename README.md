@@ -5,7 +5,7 @@
 
 We all love [Bitwarden](https://bitwarden.com/). However, sometimes we just don't feel comfortable storing all the passwords on the cloud. Although Bitwarden [stores local cache for 30 days](https://bitwarden.com/blog/configuring-bitwarden-clients-for-offline-access/#staying-logged-in-to-browser-extension-desktop-and-mobile-clients) when you go offline, it always gives a peace of mind if you know you have a secure local backup copy in your hard drive or USB thumb drive. It's also hard to keep track of all your backups, or you might completely forget to backup your passwords sometimes. **Minimalistic Bitwarden Backup Tool** is made with these concerns in mind.
 
-This is a simple but robust automated shell script tool that backups your Bitwarden vault in an instant on macOS. It utilizes the official [bitwarden-cli](https://bitwarden.com/help/cli/) to authenticate and automatically store backups, exporting a **portable (password-protected)** JSON file that you can import back to Bitwarden or other supported password managers (e.g. [KeePassXC](https://keepassxc.org/)). You can even set up reminders with [terminal-notifier](https://github.com/julienXX/terminal-notifier) to send notifications when it's time for backup so you'll never forget.
+This is a simple yet robust automated shell script tool that backups your Bitwarden vault in an instant on macOS. It utilizes the official [bitwarden-cli](https://bitwarden.com/help/cli/) to authenticate and automatically store backups, exporting a **portable (password-protected)** JSON file that you can import back to Bitwarden or other supported password managers (e.g. [KeePassXC](https://keepassxc.org/)). You can even set up reminders with [terminal-notifier](https://github.com/julienXX/terminal-notifier) to send notifications when it's time for backup so you'll never forget.
 
 No Docker, no endless dependencies, no complexities. Just a simple, transparent, hassle-free, minimalistic shell script backup tool for your local storage.
 
@@ -146,7 +146,7 @@ Having your unencrypted password backups stored on your local machine can be ver
 
 ### Log File
 
-When the script runs, it creates a log file at `/tmp/bw_backup.log`. You can check the log here should anything goes wrong. You may also change the log file path in the `.env` file.
+When the script runs, it creates a log file at `/tmp/bw_backup.log`. You can check the log here should anything go wrong. You may also change the log file path in the `.env` file.
 
 ### Possibility of Full Automation
 
