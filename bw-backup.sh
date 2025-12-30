@@ -18,7 +18,7 @@ else
 fi
 
 # set default values if not found in .env
-: ${LOG_FILE:="/tmp/bw_backup.log"}
+: ${LOG_FILE:="/tmp/bw-backup.log"}
 : ${BACKUP_DIR:="$HOME/Backups/Bitwarden"}
 : ${MAX_ATTEMPTS:=5}
 : ${KEEP_LAST_N:=3}

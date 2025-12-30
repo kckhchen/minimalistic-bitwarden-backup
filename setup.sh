@@ -18,8 +18,8 @@ done
 if [ -f "$ENV_FILE" ]; then
     # protect .env file and make scripts executable
     chmod 600 "$ENV_FILE" 2>/dev/null
-    chmod +x "$SCRIPT_DIR/backup_alerter.sh"
-    chmod +x "$SCRIPT_DIR/bw_backup.sh"
+    chmod +x "$SCRIPT_DIR/backup-alerter.sh"
+    chmod +x "$SCRIPT_DIR/bw-backup.sh"
 
     # load env variables
     set -a
@@ -46,7 +46,7 @@ else
 fi
 
 # make .zshrc alias
-ALIAS_LINE="alias bw-backup=\"$SCRIPT_DIR/bw_backup.sh\""
+ALIAS_LINE="alias bw-backup=\"$SCRIPT_DIR/bw-backup.sh\""
 RC_FILE="$HOME/.zshrc"
 
 if grep -Fxq "$ALIAS_LINE" "$RC_FILE"; then
