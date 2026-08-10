@@ -99,7 +99,14 @@ while [ $ATTEMPT -le $MAX_ATTEMPTS ]; do
 
     # sometimes Bitwarden doesn't provide the session key even when the exit code is 0
     # this block checks for an empty session key and reprompt login.
+    SESSION_RETRY=0
     if [ -z "$BW_SESSION" ]; then
+        SESSION_RETRY=$((SESSION_RETRY + 1))
+        if [ $SESSION_RETRY -gt 3 ]; then
+            osascript -e 'display dialog "Bitwarden repeatedly returned an empty session, Aborting." buttons {"OK"} default button "OK" with icon stop'
+            bw logout >>"$LOG_FILE" 2>&1
+            exit 1
+        fi
         echo "BW_SESSION not found. Retry login..." >>$LOG_FILE
         osascript -e 'display dialog "Bitwarden session key not found. Retry login. Click OK to try again or Cancel to abort." buttons {"Cancel", "OK"} default button "OK" cancel button "Cancel" with icon stop' >>"$LOG_FILE"
         if [ $? -ne 0 ]; then
