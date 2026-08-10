@@ -149,7 +149,8 @@ Backing up to: $BACKUP_DIR
 Enter your master password:"
 
 # handle master password authentication and session key issue
-
+ATTEMPT=1
+SESSION_RETRY=0
 while [ $ATTEMPT -le $MAX_ATTEMPTS ]; do
     BW_PASSWORD=$(osascript -e "display dialog \"$PROMPT_TEXT\" default answer \"\" with title \"Minimalistic Bitwarden Backup Tool\" with icon caution with hidden answer" -e "text returned of result" 2>>"$LOG_FILE")
     DIALOG_EXIT=$?
@@ -184,9 +185,8 @@ while [ $ATTEMPT -le $MAX_ATTEMPTS ]; do
 
     # sometimes Bitwarden doesn't provide the session key even when the exit code is 0
     # this block checks for an empty session key and reprompt login.
-    SESSION_RETRY=0
     if [ -z "$BW_SESSION" ]; then
-        SESSION_RETRY=$((SESSION_RETRY + 1))
+        ((SESSION_RETRY++))
         if [ $SESSION_RETRY -gt 3 ]; then
             log_message "ERROR" "Bitwarden repeatedly returned an empty session. Peocess aborted."
             die_gui "Bitwarden repeatedly returned an empty session, Aborting."
