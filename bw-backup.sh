@@ -156,4 +156,4 @@ ls -t *.json 2>/dev/null | tail -n +$TAIL_START | xargs -I {} rm "{}"
 kill "$BACKUP_PID" 2>/dev/null
 
 # notify user about completion
-terminal-notifier -title 'Minimalistic Bitwarden Backup Tool' -message 'Backup Complete. Click on this notification to navigate to your backup folder.' -execute "open '$BACKUP_DIR'"
+terminal-notifier -title 'Minimalistic Bitwarden Backup Tool' -message 'Backup completed. Click on this notification to navigate to your backup folder.' -execute "open '$BACKUP_DIR'"
