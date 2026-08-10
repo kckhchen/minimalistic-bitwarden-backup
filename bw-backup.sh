@@ -41,6 +41,20 @@ EOF
     exit 1
 }
 
+notify() {
+    local title="$1" msg="$2" exec_cmd="${3:-}"
+    if command -v terminal-notifier > /dev/null 2>&1; then
+        if [ -n "$exec_cmd" ]; then
+            terminal-notifier -title "$title" -message "$msg" -execute "$exec_cmd"
+        else
+            terminal-notifier -title "$title" -message "$msg"
+        fi
+    else
+        osascript -e "display notification \"$msg\" with title \"$title\"" > /dev/null 2>&1
+        echo "terminal-notifier not found, fell back to native notification." >> "$LOG_FILE"
+    fi
+}
+
 # dependency checks
 command -v bw > /dev/null 2>&1 || \
     die_gui "Bitwarden CLI not found. Install it with: brew install bitwarden-cli"
@@ -235,4 +249,4 @@ done
 kill_spinner "$BACKUP_PID"
 
 # notify user about completion
-terminal-notifier -title 'Minimalistic Bitwarden Backup Tool' -message "Backup completed. $ITEM_COUNT entries backed up. Click on this notification to navigate to your backup folder." -execute "open '$BACKUP_DIR'"
+notify "Minimalistic Bitwarden Backup Tool" "Backup complete ($ITEM_COUNT items are stored to $BACKUP_FILE).  Click to open the backup folder." "open '$BACKUP_DIR'"
