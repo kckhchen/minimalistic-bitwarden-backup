@@ -150,8 +150,15 @@ cd "$BACKUP_DIR" || {
 }
 
 # keep the last n files and delete older backups
+if [[ ! "$KEEP_LAST_N" =~ ^[0-9]+$ ]] || [ "$KEEP_LAST_N" -lt 1 ]; then
+    echo "Invalid KEEP_LAST_N ('$KEEP_LAST_N'), fallback to 3." >>"$LOG_FILE"
+    KEEP_LAST_N=3
+fi
+
 TAIL_START=$(($KEEP_LAST_N + 1))
-ls -t *.json 2>/dev/null | tail -n +$TAIL_START | xargs -I {} rm "{}"
+ls -t Backup-*.json 2>/dev/null | tail -n +$TAIL_START | while IFS= read -r f; do
+    rm -- "$f" && echo "Rotated out: $f" >>"$LOG_FILE"
+done
 
 kill "$BACKUP_PID" 2>/dev/null
 
