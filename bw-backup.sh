@@ -23,6 +23,10 @@ fi
 : ${MAX_ATTEMPTS:=5}
 : ${KEEP_LAST_N:=3}
 
+# add permission to backup directory
+umask 077
+mkdir -p "$BACKUP_DIR" && chmod 700 "$BACKUP_DIR"
+
 TIMESTAMP=$(date '+%Y-%m-%d %H:%M:%S')
 echo "------- Log timestamp: $TIMESTAMP -------" >>"$LOG_FILE"
 export BACKUP_FILE="$BACKUP_DIR/Bitwarden-Backup-$(date '+%Y-%m-%d_%H%M%S').json"
