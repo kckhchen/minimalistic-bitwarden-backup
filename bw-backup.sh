@@ -113,6 +113,8 @@ while [ $ATTEMPT -le $MAX_ATTEMPTS ]; do
             exit 1
         fi
         echo "BW_SESSION not found. Retry login..." >>$LOG_FILE
+        bw status >>"$LOG_FILE" 2>&1
+        bw --version >>"$LOG_FILE" 2>&1
         osascript -e 'display dialog "Bitwarden session key not found. Retry login. Click OK to try again or Cancel to abort." buttons {"Cancel", "OK"} default button "OK" cancel button "Cancel" with icon stop' >>"$LOG_FILE"
         if [ $? -ne 0 ]; then
             echo "Process cancelled by user." >>"$LOG_FILE"
