@@ -18,7 +18,7 @@ else
 fi
 
 # set default values if not found in .env
-: ${LOG_FILE:="/tmp/bw-backup.log"}
+: ${LOG_FILE:="$HOME/Library/Logs/bw-backup.log"}
 : ${BACKUP_DIR:="$HOME/Backups/Bitwarden"}
 : ${MAX_ATTEMPTS:=5}
 : ${KEEP_LAST_N:=3}
@@ -26,6 +26,7 @@ fi
 # add permission to backup directory
 umask 077
 mkdir -p "$BACKUP_DIR" && chmod 700 "$BACKUP_DIR"
+mkdir -p "${LOG_FILE:h}" && touch "$LOG_FILE" && chmod 600 "$LOG_FILE"
 
 TIMESTAMP=$(date '+%Y-%m-%d %H:%M:%S')
 echo "------- Log timestamp: $TIMESTAMP -------" >>"$LOG_FILE"
