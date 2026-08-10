@@ -33,15 +33,31 @@ echo "------- Log timestamp: $TIMESTAMP -------" >>"$LOG_FILE"
 export BACKUP_FILE="$BACKUP_DIR/Bitwarden-Backup-$(date '+%Y-%m-%d_%H%M%S').json"
 TMP_FILE="${BACKUP_FILE}.part"
 
+kill_spinner() {
+    [ -n "$1" ] || return
+    [[ "$(ps -p "$1" -o comm= 2>/dev/null)" == *osascript* ]] && kill "$1" 2>/dev/null
+}
+
+CLEANED=0
+cleanup() {
+    [ "$CLEANED" -eq 1 ] && return
+    CLEANED=1
+    [ -n "${TMP_FILE:-}" ] && rm -f "$TMP_FILE" 2>/dev/null
+    [ -n "${PW_FILE:-}" ] && rm -P -f "$PW_FILE" 2>/dev/null
+    kill_spinner "${SPINNER_PID:-}"
+    kill_spinner "${BACKUP_PID:-}"
+    unset BW_PASSWORD BW_SESSION BW_CLIENTID BW_CLIENTSECRET
+    bw logout >/dev/null 2>&1
+    echo "--- cleanup done ---" >>"$LOG_FILE"
+}
+trap cleanup EXIT INT TERM
+
 osascript -e 'display alert "Bitwarden Password Backup" message "You are about to backup your Bitwarden passwords.\n\nClick Proceed to enter your Master Password, or Cancel to skip." buttons {"Cancel", "Proceed"} default button "Proceed" cancel button "Cancel"' >>"$LOG_FILE"
 
 if [ $? -ne 0 ]; then
     echo "User clicked Cancel on the dialog. Exiting." >>"$LOG_FILE"
     exit 0
 fi
-
-# prevent error caused by previous login
-bw logout >/dev/null 2>&1
 
 # spinner dialog when logging in
 osascript -e 'display dialog "Logging in to Bitwarden...\nThis may take a few seconds." with title "Minimalistic Bitwarden Backup Tool" buttons {"Processing..."} default button 1 with icon note giving up after 600' >/dev/null 2>&1 &
@@ -51,16 +67,16 @@ bw login --apikey >>"$LOG_FILE" 2>&1 && echo "" >>"$LOG_FILE"
 LOGIN_EXIT_CODE=$?
 
 if [ $LOGIN_EXIT_CODE -eq 1 ]; then
-    kill "$SPINNER_PID" 2>/dev/null
+    kill_spinner "$SPINNER_PID"
     osascript -e 'display dialog "client_id or client_secret is incorrect. Please check your .env settings. Process aborted." with title "Minimalistic Bitwarden Backup Tool" buttons {"OK"} default button "OK" with icon stop' >/dev/null
     exit 1
 elif [ $LOGIN_EXIT_CODE -ne 0 ]; then
-    kill "$SPINNER_PID" 2>/dev/null
+    kill_spinner "$SPINNER_PID"
     osascript -e "display dialog \"Login failed with exit code $LOGIN_EXIT_CODE.\" with title \"Minimalistic Bitwarden Backup Tool\" buttons {\"OK\"} default button \"OK\" with icon stop" >/dev/null
     exit 1
 fi
 
-kill "$SPINNER_PID" 2>/dev/null
+kill_spinner "$SPINNER_PID"
 
 PROMPT_TEXT="Please enter your master password below."
 
@@ -73,7 +89,6 @@ while [ $ATTEMPT -le $MAX_ATTEMPTS ]; do
     export BW_PASSWORD
     if [ $DIALOG_EXIT -ne 0 ]; then
         echo "Process cancelled by user." >>"$LOG_FILE"
-        bw logout >>"$LOG_FILE" 2>&1 && echo "" >>"$LOG_FILE"
         exit 1
     fi
 
@@ -85,7 +100,6 @@ while [ $ATTEMPT -le $MAX_ATTEMPTS ]; do
         if [ $ATTEMPT -eq $MAX_ATTEMPTS ]; then
             osascript -e 'display dialog "Too many incorrect attempts. Backup Aborted." buttons {"OK"} default button "OK" with icon stop'
             echo "Process terminated due to too many failed attempts." >>"$LOG_FILE"
-            bw logout >>"$LOG_FILE" 2>&1 && echo "" >>"$LOG_FILE"
             exit 1
         fi
 
@@ -98,7 +112,6 @@ while [ $ATTEMPT -le $MAX_ATTEMPTS ]; do
     # other possible errors
     elif [ "$EXIT_CODE" -ne 0 ]; then
         echo "Unlock failed. Error message from Bitwarden: $BW_SESSION" >>"$LOG_FILE"
-        bw logout >>"$LOG_FILE" 2>&1 && echo "" >>"$LOG_FILE"
         exit 1
     fi
 
@@ -109,7 +122,6 @@ while [ $ATTEMPT -le $MAX_ATTEMPTS ]; do
         SESSION_RETRY=$((SESSION_RETRY + 1))
         if [ $SESSION_RETRY -gt 3 ]; then
             osascript -e 'display dialog "Bitwarden repeatedly returned an empty session, Aborting." buttons {"OK"} default button "OK" with icon stop'
-            bw logout >>"$LOG_FILE" 2>&1
             exit 1
         fi
         echo "BW_SESSION not found. Retry login..." >>$LOG_FILE
@@ -118,10 +130,8 @@ while [ $ATTEMPT -le $MAX_ATTEMPTS ]; do
         osascript -e 'display dialog "Bitwarden session key not found. Retry login. Click OK to try again or Cancel to abort." buttons {"Cancel", "OK"} default button "OK" cancel button "Cancel" with icon stop' >>"$LOG_FILE"
         if [ $? -ne 0 ]; then
             echo "Process cancelled by user." >>"$LOG_FILE"
-            bw logout >>"$LOG_FILE" 2>&1 && echo "" >>"$LOG_FILE"
             exit 1
         fi
-        bw logout >>"$LOG_FILE" 2>&1 && echo "" >>"$LOG_FILE"
         bw login --apikey >>"$LOG_FILE" 2>&1 && echo "" >>"$LOG_FILE"
         continue
     fi
@@ -131,7 +141,6 @@ while [ $ATTEMPT -le $MAX_ATTEMPTS ]; do
     break
 done
 
-# clean up api key as soon as authenticated
 unset BW_CLIENTID
 unset BW_CLIENTSECRET
 
@@ -157,16 +166,13 @@ ITEM_COUNT=$(bw list items | grep -o '"object":"item"' | wc -l | tr -d ' ')
 echo "Vault contains $ITEM_COUNT items." >>"$LOG_FILE"
 
 # clean up env variables and log out
-unset BW_SESSION
-unset BW_PASSWORD
-bw logout >>"$LOG_FILE" 2>&1 && echo "" >>"$LOG_FILE" && echo "" >>"$LOG_FILE"
 
 # handle potential export errors
 if [ $EXPORT_EXIT_CODE -eq 0 ]; then
     echo "Backup completed. Backup file stored at $BACKUP_FILE" >>"$LOG_FILE"
 else
     echo "Backup failed." >>"$LOG_FILE"
-    kill "$BACKUP_PID" 2>/dev/null
+    kill_spinner "$BACKUP_PID"
     osascript -e 'display dialog "Backup failed." with title "Backup Failed" buttons {"OK"} default button "OK" with icon stop' >/dev/null 2>&1
     exit 1
 fi
@@ -175,7 +181,7 @@ fi
 cd "$BACKUP_DIR" || {
     echo "Cannot find backup directory. Process aborted." >>"$LOG_FILE"
     osascript -e 'display dialog "Cannot find backup directory. Process aborted." with title "Minimalistic Bitwarden Backup Tool" buttons {"OK"} default button "OK" with icon stop' >/dev/null 2>&1
-    kill "$BACKUP_PID" 2>/dev/null
+    kill_spinner "$BACKUP_PID"
     exit 1
 }
 
@@ -190,7 +196,7 @@ ls -t Bitwarden-Backup-*.json 2>/dev/null | tail -n +$TAIL_START | while IFS= re
     rm -- "$f" && echo "Rotated out: $f" >>"$LOG_FILE"
 done
 
-kill "$BACKUP_PID" 2>/dev/null
+kill_spinner "$BACKUP_PID"
 
 # notify user about completion
 terminal-notifier -title 'Minimalistic Bitwarden Backup Tool' -message "Backup completed. $ITEM_COUNT entries backed up. Click on this notification to navigate to your backup folder." -execute "open '$BACKUP_DIR'"
