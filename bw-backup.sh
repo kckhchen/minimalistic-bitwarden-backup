@@ -63,9 +63,10 @@ PROMPT_TEXT="Please enter your master password below."
 
 while [ $ATTEMPT -le $MAX_ATTEMPTS ]; do
 
-    export BW_PASSWORD=$(osascript -e "display dialog \"$PROMPT_TEXT\" default answer \"\" with title \"Minimalistic Bitwarden Backup Tool\" with icon caution with hidden answer" -e "text returned of result" 2>>"$LOG_FILE")
-
-    if [ $? -ne 0 ] || [ -z "$BW_PASSWORD" ]; then
+    BW_PASSWORD=$(osascript -e "display dialog \"$PROMPT_TEXT\" default answer \"\" with title \"Minimalistic Bitwarden Backup Tool\" with icon caution with hidden answer" -e "text returned of result" 2>>"$LOG_FILE")
+    DIALOG_EXIT=$?
+    export BW_PASSWORD
+    if [ $DIALOG_EXIT -ne 0 ]; then
         echo "Process cancelled by user." >>"$LOG_FILE"
         bw logout >>"$LOG_FILE" 2>&1 && echo "" >>"$LOG_FILE"
         exit 1
