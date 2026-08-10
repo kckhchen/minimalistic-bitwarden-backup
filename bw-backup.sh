@@ -72,7 +72,7 @@ while [ $ATTEMPT -le $MAX_ATTEMPTS ]; do
         exit 1
     fi
 
-    BW_SESSION=$(bw unlock --passwordenv BW_PASSWORD --raw 2>&1)
+    BW_SESSION=$(bw unlock --passwordenv BW_PASSWORD --raw 2>>"$LOG_FILE")
     EXIT_CODE=$?
 
     # invalid master password, accumulate attempts
