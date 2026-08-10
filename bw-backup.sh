@@ -13,7 +13,7 @@ if [ -f "$ENV_FILE" ]; then
     source "$ENV_FILE"
     set +a
 else
-    osascript -e 'display dialog ".env file is missing. Process aborted." with title "Minimalistic Bitwarden Backup Tool" buttons {"OK"} default button "OK" with icon stop' > /dev/null 2>&1
+    osascript -e 'display dialog ".env file is missing. Process aborted." with title "Minimalistic Bitwarden Backup Tool" buttons {"OK"} default button "OK" with icon stop' >/dev/null 2>&1
     exit 1
 fi
 
@@ -24,33 +24,33 @@ fi
 : ${KEEP_LAST_N:=3}
 
 TIMESTAMP=$(date '+%Y-%m-%d %H:%M:%S')
-echo "------- Log timestamp: $TIMESTAMP -------" >> "$LOG_FILE"
+echo "------- Log timestamp: $TIMESTAMP -------" >>"$LOG_FILE"
 export BACKUP_FILE="$BACKUP_DIR/Backup-$(date '+%Y-%m-%d').json"
 
-osascript -e 'display alert "Bitwarden Password Backup" message "You are about to backup your Bitwarden passwords.\n\nClick Proceed to enter your Master Password, or Cancel to skip." buttons {"Cancel", "Proceed"} default button "Proceed" cancel button "Cancel"' >> "$LOG_FILE"
+osascript -e 'display alert "Bitwarden Password Backup" message "You are about to backup your Bitwarden passwords.\n\nClick Proceed to enter your Master Password, or Cancel to skip." buttons {"Cancel", "Proceed"} default button "Proceed" cancel button "Cancel"' >>"$LOG_FILE"
 
 if [ $? -ne 0 ]; then
-    echo "User clicked Cancel on the dialog. Exiting." >> "$LOG_FILE"
+    echo "User clicked Cancel on the dialog. Exiting." >>"$LOG_FILE"
     exit 0
 fi
 
 # prevent error caused by previous login
-bw logout > /dev/null 2>&1
+bw logout >/dev/null 2>&1
 
 # spinner dialog when logging in
-osascript -e 'display dialog "Logging in to Bitwarden...\nThis may take a few seconds." with title "Minimalistic Bitwarden Backup Tool" buttons {"Processing..."} default button 1 with icon note giving up after 30' > /dev/null 2>&1 &
+osascript -e 'display dialog "Logging in to Bitwarden...\nThis may take a few seconds." with title "Minimalistic Bitwarden Backup Tool" buttons {"Processing..."} default button 1 with icon note giving up after 30' >/dev/null 2>&1 &
 SPINNER_PID=$!
 
-bw login --apikey >> "$LOG_FILE" 2>&1 && echo "" >> "$LOG_FILE"
+bw login --apikey >>"$LOG_FILE" 2>&1 && echo "" >>"$LOG_FILE"
 LOGIN_EXIT_CODE=$?
 
 if [ $LOGIN_EXIT_CODE -eq 1 ]; then
     kill "$SPINNER_PID" 2>/dev/null
-    osascript -e 'display dialog "client_id or client_secret is incorrect. Please check your .env settings. Process aborted." with title "Minimalistic Bitwarden Backup Tool" buttons {"OK"} default button "OK" with icon stop' > /dev/null
+    osascript -e 'display dialog "client_id or client_secret is incorrect. Please check your .env settings. Process aborted." with title "Minimalistic Bitwarden Backup Tool" buttons {"OK"} default button "OK" with icon stop' >/dev/null
     exit 1
 elif [ $LOGIN_EXIT_CODE -ne 0 ]; then
     kill "$SPINNER_PID" 2>/dev/null
-    osascript -e "display dialog \"Login failed with exit code $LOGIN_EXIT_CODE.\" with title \"Minimalistic Bitwarden Backup Tool\" buttons {\"OK\"} default button \"OK\" with icon stop" > /dev/null
+    osascript -e "display dialog \"Login failed with exit code $LOGIN_EXIT_CODE.\" with title \"Minimalistic Bitwarden Backup Tool\" buttons {\"OK\"} default button \"OK\" with icon stop" >/dev/null
     exit 1
 fi
 
@@ -65,8 +65,8 @@ while [ $ATTEMPT -le $MAX_ATTEMPTS ]; do
     export BW_PASSWORD=$(osascript -e "display dialog \"$PROMPT_TEXT\" default answer \"\" with title \"Minimalistic Bitwarden Backup Tool\" with icon caution with hidden answer" -e "text returned of result" 2>>"$LOG_FILE")
 
     if [ $? -ne 0 ] || [ -z "$BW_PASSWORD" ]; then
-        echo "Process cancelled by user." >> "$LOG_FILE"
-        bw logout >> "$LOG_FILE" 2>&1 && echo "" >> "$LOG_FILE"
+        echo "Process cancelled by user." >>"$LOG_FILE"
+        bw logout >>"$LOG_FILE" 2>&1 && echo "" >>"$LOG_FILE"
         exit 1
     fi
 
@@ -77,36 +77,36 @@ while [ $ATTEMPT -le $MAX_ATTEMPTS ]; do
     if [ "$EXIT_CODE" -eq 1 ]; then
         if [ $ATTEMPT -eq $MAX_ATTEMPTS ]; then
             osascript -e 'display dialog "Too many incorrect attempts. Backup Aborted." buttons {"OK"} default button "OK" with icon stop'
-            echo "Process terminated due to too many failed attempts." >> "$LOG_FILE"
-            bw logout >> "$LOG_FILE" 2>&1 && echo "" >> "$LOG_FILE"
+            echo "Process terminated due to too many failed attempts." >>"$LOG_FILE"
+            bw logout >>"$LOG_FILE" 2>&1 && echo "" >>"$LOG_FILE"
             exit 1
         fi
-        
+
         REMAINING=$((MAX_ATTEMPTS - ATTEMPT))
         PROMPT_TEXT="Incorrect password. ($REMAINING attempts remaining)\n\nPlease try again:"
-        echo "Invalid Password. Attempts ($ATTEMPT / $MAX_ATTEMPTS)." >> "$LOG_FILE"
+        echo "Invalid Password. Attempts ($ATTEMPT / $MAX_ATTEMPTS)." >>"$LOG_FILE"
         ((ATTEMPT++))
         continue
 
     # other possible errors
     elif [ "$EXIT_CODE" -ne 0 ]; then
-        echo "Unlock failed. Error message from Bitwarden: $BW_SESSION" >> "$LOG_FILE"
-        bw logout >> "$LOG_FILE" 2>&1 && echo "" >> "$LOG_FILE"
+        echo "Unlock failed. Error message from Bitwarden: $BW_SESSION" >>"$LOG_FILE"
+        bw logout >>"$LOG_FILE" 2>&1 && echo "" >>"$LOG_FILE"
         exit 1
     fi
 
     # sometimes Bitwarden doesn't provide the session key even when the exit code is 0
     # this block checks for an empty session key and reprompt login.
     if [ -z "$BW_SESSION" ]; then
-        echo "BW_SESSION not found. Retry login..." >> $LOG_FILE
-        osascript -e 'display dialog "Bitwarden session key not found. Retry login. Click OK to try again or Cancel to abort." buttons {"Cancel", "OK"} default button "OK" cancel button "Cancel" with icon stop' >> "$LOG_FILE"
+        echo "BW_SESSION not found. Retry login..." >>$LOG_FILE
+        osascript -e 'display dialog "Bitwarden session key not found. Retry login. Click OK to try again or Cancel to abort." buttons {"Cancel", "OK"} default button "OK" cancel button "Cancel" with icon stop' >>"$LOG_FILE"
         if [ $? -ne 0 ]; then
-            echo "Process cancelled by user." >> "$LOG_FILE"
-            bw logout >> "$LOG_FILE" 2>&1 && echo "" >> "$LOG_FILE"
+            echo "Process cancelled by user." >>"$LOG_FILE"
+            bw logout >>"$LOG_FILE" 2>&1 && echo "" >>"$LOG_FILE"
             exit 1
         fi
-        bw logout >> "$LOG_FILE" 2>&1 && echo "" >> "$LOG_FILE"
-        bw login --apikey >> "$LOG_FILE" 2>&1 && echo "" >> "$LOG_FILE"
+        bw logout >>"$LOG_FILE" 2>&1 && echo "" >>"$LOG_FILE"
+        bw login --apikey >>"$LOG_FILE" 2>&1 && echo "" >>"$LOG_FILE"
         continue
     fi
 
@@ -119,7 +119,7 @@ done
 unset BW_CLIENTID
 unset BW_CLIENTSECRET
 
-osascript -e 'display dialog "Authentication succeeded. Backup has started. You will be notified when the process is completed. You can close this dialog." with title "Minimalistic Bitwarden Backup Tool" buttons {"OK"} default button "OK" with icon note' > /dev/null 2>&1 &
+osascript -e 'display dialog "Authentication succeeded. Backup has started. You will be notified when the process is completed. You can close this dialog." with title "Minimalistic Bitwarden Backup Tool" buttons {"OK"} default button "OK" with icon note' >/dev/null 2>&1 &
 BACKUP_PID=$!
 
 # export to encrypted json file protected by the master password
@@ -129,22 +129,22 @@ EXPORT_EXIT_CODE=$?
 # clean up env variables and log out
 unset BW_SESSION
 unset BW_PASSWORD
-bw logout >> "$LOG_FILE" 2>&1 && echo "" >> "$LOG_FILE" && echo "" >> "$LOG_FILE"
+bw logout >>"$LOG_FILE" 2>&1 && echo "" >>"$LOG_FILE" && echo "" >>"$LOG_FILE"
 
 # handle potential export errors
 if [ $EXPORT_EXIT_CODE -eq 0 ]; then
-    echo "Backup completed. Backup file stored at $BACKUP_FILE" >> "$LOG_FILE"
+    echo "Backup completed. Backup file stored at $BACKUP_FILE" >>"$LOG_FILE"
 else
-    echo "Backup failed." >> "$LOG_FILE"
+    echo "Backup failed." >>"$LOG_FILE"
     kill "$BACKUP_PID" 2>/dev/null
-    osascript -e 'display dialog "Backup failed." with title "Backup Failed" buttons {"OK"} default button "OK" with icon stop' > /dev/null 2>&1
+    osascript -e 'display dialog "Backup failed." with title "Backup Failed" buttons {"OK"} default button "OK" with icon stop' >/dev/null 2>&1
     exit 1
 fi
 
 # cd to the backup directory. stop immediately if directory not found to prevent unexpected deletion.
 cd "$BACKUP_DIR" || {
-    echo "Cannot find backup directory. Process aborted." >> "$LOG_FILE"
-    osascript -e 'display dialog "Cannot find backup directory. Process aborted." with title "Minimalistic Bitwarden Backup Tool" buttons {"OK"} default button "OK" with icon stop' > /dev/null 2>&1
+    echo "Cannot find backup directory. Process aborted." >>"$LOG_FILE"
+    osascript -e 'display dialog "Cannot find backup directory. Process aborted." with title "Minimalistic Bitwarden Backup Tool" buttons {"OK"} default button "OK" with icon stop' >/dev/null 2>&1
     kill "$BACKUP_PID" 2>/dev/null
     exit 1
 }

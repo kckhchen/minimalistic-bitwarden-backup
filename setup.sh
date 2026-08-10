@@ -8,7 +8,7 @@ echo "Setting up the tool..."
 # check dependencies
 REQUIRED_TOOLS=("bw" "terminal-notifier")
 for tool in "${REQUIRED_TOOLS[@]}"; do
-    if ! command -v $tool &> /dev/null; then
+    if ! command -v $tool &>/dev/null; then
         echo "Error: '$tool' is not installed or not in PATH."
         exit 1
     fi
@@ -56,10 +56,10 @@ else
     echo ""
 
     if [[ "$REPLY" == "y" ]]; then
-        echo "" >> "$RC_FILE"
-        echo "# Bitwarden Backup Tool Shortcut" >> "$RC_FILE"
-        echo "$ALIAS_LINE" >> "$RC_FILE"
-        
+        echo "" >>"$RC_FILE"
+        echo "# Bitwarden Backup Tool Shortcut" >>"$RC_FILE"
+        echo "$ALIAS_LINE" >>"$RC_FILE"
+
         echo "Installed! Restart your terminal or run: source $RC_FILE"
         echo "You can now type 'bw-backup' anywhere to run this tool."
         echo "If you plan to move the script folder to another directory, please remember to change the alias setting in ~/.zshrc accordingly."
