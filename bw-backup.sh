@@ -150,6 +150,10 @@ else
     EXPORT_EXIT_CODE=1
 fi
 
+# count bakcup items and warn about potentially lost items
+ITEM_COUNT=$(bw list items | grep -o '"object":"item"' | wc -l | tr -d ' ')
+echo "Vault contains $ITEM_COUNT items." >>"$LOG_FILE"
+
 # clean up env variables and log out
 unset BW_SESSION
 unset BW_PASSWORD
@@ -187,4 +191,4 @@ done
 kill "$BACKUP_PID" 2>/dev/null
 
 # notify user about completion
-terminal-notifier -title 'Minimalistic Bitwarden Backup Tool' -message 'Backup completed. Click on this notification to navigate to your backup folder.' -execute "open '$BACKUP_DIR'"
+terminal-notifier -title 'Minimalistic Bitwarden Backup Tool' -message "Backup completed. $ITEM_COUNT entries backed up. Click on this notification to navigate to your backup folder." -execute "open '$BACKUP_DIR'"
