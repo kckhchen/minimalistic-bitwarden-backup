@@ -31,8 +31,8 @@ TIMESTAMP=$(date '+%Y-%m-%d %H:%M:%S')
 echo "------- Log timestamp: $TIMESTAMP -------" >>"$LOG_FILE"
 
 die_gui() {
-    echo "FATAL: $1" >> "$LOG_FILE"
-    osascript - "$1" <<'EOF' > /dev/null 2>&1
+    echo "FATAL: $1" >>"$LOG_FILE"
+    osascript - "$1" <<'EOF' >/dev/null 2>&1
 on run argv
     display dialog (item 1 of argv) with title "Minimalistic Bitwarden Backup Tool" ¬
         buttons {"OK"} default button "OK" with icon stop
@@ -43,39 +43,42 @@ EOF
 
 notify() {
     local title="$1" msg="$2" exec_cmd="${3:-}"
-    if command -v terminal-notifier > /dev/null 2>&1; then
+    if command -v terminal-notifier >/dev/null 2>&1; then
         if [ -n "$exec_cmd" ]; then
             terminal-notifier -title "$title" -message "$msg" -execute "$exec_cmd"
         else
             terminal-notifier -title "$title" -message "$msg"
         fi
     else
-        osascript -e "display notification \"$msg\" with title \"$title\"" > /dev/null 2>&1
-        echo "terminal-notifier not found, fell back to native notification." >> "$LOG_FILE"
+        osascript -e "display notification \"$msg\" with title \"$title\"" >/dev/null 2>&1
+        echo "terminal-notifier not found, fell back to native notification." >>"$LOG_FILE"
     fi
 }
 
 # dependency checks
-command -v bw > /dev/null 2>&1 || \
+command -v bw >/dev/null 2>&1 ||
     die_gui "Bitwarden CLI not found. Install it with: brew install bitwarden-cli"
 
-command -v osascript > /dev/null 2>&1 || { echo "osascript missing"; exit 1; }
+command -v osascript >/dev/null 2>&1 || {
+    echo "osascript missing"
+    exit 1
+}
 
 # log setup
 {
     echo "bw version: $(bw --version 2>&1)"
     echo "PATH: $PATH"
-    command -v terminal-notifier > /dev/null 2>&1 \
-        && echo "terminal-notifier: $(command -v terminal-notifier)" \
-        || echo "terminal-notifier: NOT INSTALLED"
-} >> "$LOG_FILE"
+    command -v terminal-notifier >/dev/null 2>&1 &&
+        echo "terminal-notifier: $(command -v terminal-notifier)" ||
+        echo "terminal-notifier: NOT INSTALLED"
+} >>"$LOG_FILE"
 
 # check env variables
-[ -n "$BW_CLIENTID" ] && [ -n "$BW_CLIENTSECRET" ] || \
+[ -n "$BW_CLIENTID" ] && [ -n "$BW_CLIENTSECRET" ] ||
     die_gui "Bitwarden API credentials are missing in .env"
 
 # make backup setup
-mkdir -p "$BACKUP_DIR" 2>/dev/null || \
+mkdir -p "$BACKUP_DIR" 2>/dev/null ||
     die_gui "Cannot create backup directory: $BACKUP_DIR"
 chmod 700 "$BACKUP_DIR" 2>/dev/null
 
@@ -86,7 +89,6 @@ kill_spinner() {
     [ -n "$1" ] || return
     [[ "$(ps -p "$1" -o comm= 2>/dev/null)" == *osascript* ]] && kill "$1" 2>/dev/null
 }
-
 
 CLEANED=0
 cleanup() {
@@ -128,7 +130,28 @@ fi
 
 kill_spinner "$SPINNER_PID"
 
-PROMPT_TEXT="Please enter your master password below."
+# prompt message assembly
+BW_EMAIL=$(bw status 2>/dev/null | sed -n 's/.*"userEmail":"\([^"]*\)".*/\1/p')
+LAST_BACKUP=$(ls -t "$BACKUP_DIR"/Bitwarden-Backup-*.json 2>/dev/null | head -1)
+if [ -n "$LAST_BACKUP" ]; then
+    LAST_DATE=$(stat -f "%Sm" -t "%Y-%m-%d %H:%M" "$LAST_BACKUP")
+else
+    LAST_DATE="(no previous backup)"
+fi
+
+if [ -n "$SAFETY_PHRASE" ]; then
+    HEADER="Safety Phrase: $SAFETY_PHRASE"
+else
+    HEADER="Warning: SAFETY_PHRASE not set — see README"
+fi
+
+PROMPT_TEXT="$HEADER
+
+Account: ${BW_EMAIL:-unknown}
+Last backup: $LAST_DATE
+Backing up to: $BACKUP_DIR
+
+Enter your master password:"
 
 # handle master password authentication and session key issue
 
