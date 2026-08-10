@@ -25,7 +25,8 @@ fi
 
 TIMESTAMP=$(date '+%Y-%m-%d %H:%M:%S')
 echo "------- Log timestamp: $TIMESTAMP -------" >>"$LOG_FILE"
-export BACKUP_FILE="$BACKUP_DIR/Backup-$(date '+%Y-%m-%d').json"
+export BACKUP_FILE="$BACKUP_DIR/Bitwarden-Backup-$(date '+%Y-%m-%d_%H%M%S').json"
+TMP_FILE="${BACKUP_FILE}.part"
 
 osascript -e 'display alert "Bitwarden Password Backup" message "You are about to backup your Bitwarden passwords.\n\nClick Proceed to enter your Master Password, or Cancel to skip." buttons {"Cancel", "Proceed"} default button "Proceed" cancel button "Cancel"' >>"$LOG_FILE"
 
@@ -123,8 +124,18 @@ osascript -e 'display dialog "Authentication succeeded. Backup has started. You 
 BACKUP_PID=$!
 
 # export to encrypted json file protected by the master password
-bw export --format encrypted_json --password "$BW_PASSWORD" --output "$BACKUP_FILE" 2>>"$LOG_FILE"
+bw export --format encrypted_json --password "$BW_PASSWORD" --output "$TMP_FILE" 2>>"$LOG_FILE"
 EXPORT_EXIT_CODE=$?
+
+# check the content
+if [ $EXPORT_EXIT_CODE -eq 0 ] && [ -s "$TMP_FILE" ] &&
+    grep -q '"encrypted"' "$TMP_FILE"; then
+    chmod 600 "$TMP_FILE"
+    mv -f "$TMP_FILE" "$BACKUP_FILE"
+else
+    rm -f "$TMP_FILE"
+    EXPORT_EXIT_CODE=1
+fi
 
 # clean up env variables and log out
 unset BW_SESSION
@@ -156,7 +167,7 @@ if [[ ! "$KEEP_LAST_N" =~ ^[0-9]+$ ]] || [ "$KEEP_LAST_N" -lt 1 ]; then
 fi
 
 TAIL_START=$(($KEEP_LAST_N + 1))
-ls -t Backup-*.json 2>/dev/null | tail -n +$TAIL_START | while IFS= read -r f; do
+ls -t Bitwarden-Backup-*.json 2>/dev/null | tail -n +$TAIL_START | while IFS= read -r f; do
     rm -- "$f" && echo "Rotated out: $f" >>"$LOG_FILE"
 done
 
