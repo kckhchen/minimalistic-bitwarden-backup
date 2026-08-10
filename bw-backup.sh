@@ -44,7 +44,7 @@ fi
 bw logout >/dev/null 2>&1
 
 # spinner dialog when logging in
-osascript -e 'display dialog "Logging in to Bitwarden...\nThis may take a few seconds." with title "Minimalistic Bitwarden Backup Tool" buttons {"Processing..."} default button 1 with icon note giving up after 30' >/dev/null 2>&1 &
+osascript -e 'display dialog "Logging in to Bitwarden...\nThis may take a few seconds." with title "Minimalistic Bitwarden Backup Tool" buttons {"Processing..."} default button 1 with icon note giving up after 600' >/dev/null 2>&1 &
 SPINNER_PID=$!
 
 bw login --apikey >>"$LOG_FILE" 2>&1 && echo "" >>"$LOG_FILE"
