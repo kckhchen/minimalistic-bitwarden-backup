@@ -33,7 +33,7 @@ And that's it!
 
 A dialog window will appear requesting your Bitwarden master password. Once you enter the correct password, it handles everything and stores the encrypted JSON file in the directory of your choice. You will receive a notification after ~10 seconds confirming the backup.
 
-If you set up a reminder with `crontab` (detailed below), you will receive a notification regularly that looks like this:
+If you set up a reminder with `LaunchAgent` (detailed below), you will receive a notification regularly that looks like this:
 
 <img src="./assets/backup-alert.png" alt="a quick look at the notification"/>
 
@@ -68,19 +68,18 @@ Copy the `.env.example` file in the repository and rename it `.env` before confi
 cp .env.example .env
 ```
 
-Log in to Bitwarden on your web browser and follow the steps from the [official documentation](https://bitwarden.com/help/personal-api-key/#get-your-personal-api-key) to get your API key. Copy and paste your `client_id` and `client_secret` in the corresponding fields in the `.env` file. Other configurable variables are listed here:
-
-| Name              | Description                                                             | Default                   |
-| ----------------- | ----------------------------------------------------------------------- | ------------------------- |
-| `BW_CLIENTID`     | Your `client_id` from Bitwarden                                         | none                      |
-| `BW_CLIENTSECRET` | Your `client_secret` from Bitwarden                                     | none                      |
-| `BACKUP_DIR`      | Directory to store your backup files                                    | `$HOME/Backups/Bitwarden` |
-| `LOG_FILE`        | Path to the log file                                                    | `/tmp/bw-backup.log`      |
-| `MAX_ATTEMPTS`    | Maximum attempts of password before the process aborts                  | 5                         |
-| `KEEP_LAST_N`     | Number of backups to keep                                               | 3                         |
-| `SAFETY_PHRASE`   | A phrase to let you know it is this tool prompting you for the password | none                      |
+| Name            | Description                                                                                 | Default                   |
+| --------------- | ------------------------------------------------------------------------------------------- | ------------------------- |
+| `BACKUP_DIR`    | Directory to store your backup files                                                        | `$HOME/Backups/Bitwarden` |
+| `LOG_FILE`      | Path to the log file                                                                        | `/tmp/bw-backup.log`      |
+| `MAX_ATTEMPTS`  | Maximum attempts of password before the process aborts                                      | 5                         |
+| `KEEP_LAST_N`   | Number of backups to keep                                                                   | 3                         |
+| `SAFETY_PHRASE` | A phrase to let you know it is this tool prompting you for the password                     | none                      |
+| `BW_SERVER`     | Your custom Bitwarden server. If you use the official Bitwarden, plese leave it as a blank. | none                      |
 
 ### Installation
+
+Fist you need your Bitwarden API key at hand. Log in to Bitwarden on your web browser and follow the steps from the [official documentation](https://bitwarden.com/help/personal-api-key/#get-your-personal-api-key) to get your API key. Have them ready as you will need them during setup.
 
 This repository comes with a `setup.sh` shell script. Use the following commands to quickly set things up.
 
@@ -94,23 +93,11 @@ chmod +x ./setup.sh
 
 `setup.sh` will check dependencies, create the backup directory, validate configurations, and make sure your `.env` file is secure. Specifically, it runs `chmod 600` for your `.env` to make sure only you, the owner, can access the sensitive information inside.
 
-The setup script also enables the command `bw-backup` for you to backup your file manually in the terminal (you can opt out of it, of course)
+It will also prompt you for your Bitwarden API `clientid` and `clientsecret`. You will be prompted to enter each of them twice for confirmation. The tool will not store your API keys. Rather, it stores them securely inside your Apple Keychain and only uses them to authenticate you when necessary.
 
-### Scheduling the Backup (Optional)
+The setup script also enables the command `bw-backup` for you to backup your file manually in the terminal and setup `LaunchAgent` for you. (you can opt out of it, of course)
 
-Besides typing the command and running the backup task manually, you can set up a cron scheduler for `backup-alerter.sh` to remind you on a regular basis. First, edit the `crontab` file by typing this command in the terminal:
-
-```bash
-crontab -e
-```
-
-Then use any cron expression to set up the frequency with which you want to be reminded. For example, to have cron remind you on the first day of every month at noon, enter the following and save the file (You might need to give permissions to cron):
-
-```bash
-0 12 1 * * /path/to/repo/backup-alerter.sh
-```
-
-You will get a clickable notification when it's time to backup. For more crontab settings you can refer to [crontab guru](https://crontab.guru/).
+When the setup is done, you can run your `bw-backup` script and have your passwords backed up securely offline on your machine.
 
 ## How to Restore
 
@@ -119,14 +106,14 @@ If you ever need to use your backup:
 1. Log in to your [Bitwarden Web Vault](https://vault.bitwarden.com/).
 2. Go to **Tools** → **Import Data**.
 3. Select format: **Bitwarden (json)**.
-4. Choose the `Backup-YYYY-MM-DD.json` file generated by this tool.
+4. Choose the `Bitwarden-Backup-YYYY-MM-DD-HH-MM-SS.json` file generated by this tool.
 5. **Important:** Because the file is encrypted, Bitwarden will ask for the password you used when the backup was created (which is your master password).
 
 Or you might want a cold storage in KeePassXC:
 
 1. Open the KeePassXC application.
 2. Select **Import File**, choose **Bitwarden (.json)**.
-3. Use **Browse** to locate your backup `Backup-YYYY-MM-DD.json` and enter your master password in the **Password** field.
+3. Use **Browse** to locate your backup `Bitwarden-Backup-YYYY-MM-DD-HH-MM-SS.json` and enter your master password in the **Password** field.
 4. Encrypt the database with your password.
 
 ## Security Disclosure
@@ -146,14 +133,6 @@ When the script runs, it creates a log file at `~/Library/Logs/bw-backup.log`. Y
 ### Possibility of Full Automation
 
 Technically this can be achieved. However, not having to manually type in the master password to initiate the backup process generally means that the user has to store the master password in plain text as an environment variable, which is dangerous practice. For this reason, manually typing the master password via the secure OS prompt is the intended design.
-
-### Known issue
-
-For unknown reasons, sometimes even when the master password is correct, Bitwarden returns an empty session key string. A detection code block is included to capture this issue and prompt a re-login automatically.
-
-<img src="./assets/empty-session-key.png" width="300" alt="a screenshot showing alert on empty session keys"/>
-
-Generally, 1 or 2 re-logins solve the issue. If you know the solution to this issue, please let me know.
 
 ---
 
