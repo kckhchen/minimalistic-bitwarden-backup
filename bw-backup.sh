@@ -41,9 +41,7 @@ fi
 log_message() {
     local LOG_LEVEL="$1"
     local MESSAGE="$2"
-    # Format: YYYY-MM-DD HH:MM:SS
     local TIMESTAMP=$(date "+%Y-%m-%d %H:%M:%S")
-
     echo "[$TIMESTAMP] [$LOG_LEVEL] $MESSAGE" | tee -a "$LOG_FILE"
 }
 
@@ -103,7 +101,7 @@ cleanup() {
 }
 trap cleanup EXIT INT TERM
 
-osascript -e 'display alert "Bitwarden Password Backup" message "You are about to backup your Bitwarden passwords.\n\nClick Proceed to enter your Master Password, or Cancel to skip." buttons {"Cancel", "Proceed"} default button "Proceed" cancel button "Cancel"' >>"$LOG_FILE"
+osascript -e 'display alert "Bitwarden Password Backup" message "You are about to backup your Bitwarden passwords.\n\nClick Proceed to enter your Master Password, or Cancel to skip." buttons {"Cancel", "Proceed"} default button "Proceed" cancel button "Cancel"'
 
 if [ $? -ne 0 ]; then
     log_message "INFO" "User clicked Cancel on the dialog. Exiting."
@@ -114,8 +112,9 @@ fi
 osascript -e 'display dialog "Logging in to Bitwarden...\nThis may take a few seconds." with title "Minimalistic Bitwarden Backup Tool" buttons {"Processing..."} default button 1 with icon note giving up after 600' >/dev/null 2>&1 &
 SPINNER_PID=$!
 
-bw login --apikey >>"$LOG_FILE" 2>&1
+BW_OUTPUT=$(bw login --apikey 2>&1)
 LOGIN_EXIT_CODE=$?
+log_message "INFO" "$BW_OUTPUT"
 
 kill_spinner "$SPINNER_PID"
 
@@ -152,7 +151,7 @@ Enter your master password:"
 ATTEMPT=1
 SESSION_RETRY=0
 while [ $ATTEMPT -le $MAX_ATTEMPTS ]; do
-    BW_PASSWORD=$(osascript -e "display dialog \"$PROMPT_TEXT\" default answer \"\" with title \"Minimalistic Bitwarden Backup Tool\" with icon caution with hidden answer" -e "text returned of result" 2>>"$LOG_FILE")
+    BW_PASSWORD=$(osascript -e "display dialog \"$PROMPT_TEXT\" default answer \"\" with title \"Minimalistic Bitwarden Backup Tool\" with icon caution with hidden answer" -e "text returned of result")
     DIALOG_EXIT=$?
     export BW_PASSWORD
     if [ $DIALOG_EXIT -ne 0 ]; then
@@ -160,8 +159,9 @@ while [ $ATTEMPT -le $MAX_ATTEMPTS ]; do
         exit 0
     fi
 
-    BW_SESSION=$(bw unlock --passwordenv BW_PASSWORD --raw 2>>"$LOG_FILE")
+    BW_SESSION=$(bw unlock --passwordenv BW_PASSWORD --raw)
     EXIT_CODE=$?
+    log_message "INFO" "$BW_SESSION"
 
     # invalid master password, accumulate attempts
     if [ "$EXIT_CODE" -eq 1 ]; then
@@ -193,12 +193,13 @@ while [ $ATTEMPT -le $MAX_ATTEMPTS ]; do
         fi
         log_message "ERROR" "BW_SESSION not found. Retry login..."
         log_message "ERROR" "$(bw status 2>&1)"
-        osascript -e 'display dialog "Bitwarden session key not found. Retry login. Click OK to try again or Cancel to abort." buttons {"Cancel", "OK"} default button "OK" cancel button "Cancel" with icon stop' >>"$LOG_FILE"
+        osascript -e 'display dialog "Bitwarden session key not found. Retry login. Click OK to try again or Cancel to abort." buttons {"Cancel", "OK"} default button "OK" cancel button "Cancel" with icon stop'
         if [ $? -ne 0 ]; then
             log_message "INFO" "Process cancelled by user."
             exit 0
         fi
-        bw login --apikey >>"$LOG_FILE" 2>&1
+        BW_OUTPUT=$(bw login --apikey 2>&1)
+        log_message "INFO" "$BW_OUTPUT"
         continue
     fi
 
@@ -214,8 +215,9 @@ osascript -e 'display dialog "Authentication succeeded. Backup has started. You 
 BACKUP_PID=$!
 
 # export to encrypted json file protected by the master password
-bw export --format encrypted_json --password "$BW_PASSWORD" --output "$TMP_FILE" 2>>"$LOG_FILE"
+EXPORT_OUTPUT=$(bw export --format encrypted_json --password "$BW_PASSWORD" --output "$TMP_FILE" 2>&1)
 EXPORT_EXIT_CODE=$?
+log_message "INFO" "$EXPORT_OUTPUT"
 
 # check the content
 if [ $EXPORT_EXIT_CODE -eq 0 ] && [ -s "$TMP_FILE" ] &&
@@ -242,7 +244,7 @@ fi
 
 # cd to the backup directory. stop immediately if directory not found to prevent unexpected deletion.
 cd "$BACKUP_DIR" || {
-    log_meesage "ERROR" "Cannot find backup directory. Process aborted."
+    log_message "ERROR" "Cannot find backup directory. Process aborted."
     kill_spinner "$BACKUP_PID"
     die_gui -"Cannot find backup directory. Process aborted."
 }
