@@ -2,9 +2,48 @@
 
 # Automated Bitwarden Backup Script
 
+umask 077
 export PATH="/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin:$PATH"
 SCRIPT_DIR=${0:a:h}
 ENV_FILE="$SCRIPT_DIR/.env"
+ATTEMPT=1
+SESSION_RETRY=0
+MAX_SESSION_RETRY=3
+REAUTH_HAPPENED=0
+SYNC_WARNING=""
+
+KC_SERVICE_ID="bw-backup-clientid"
+KC_SERVICE_SECRET="bw-backup-clientsecret"
+
+# source variables from .env
+if [ -f "$ENV_FILE" ]; then
+    set -a
+    source "$ENV_FILE"
+    set +a
+else
+    osascript -e 'display dialog ".env file is missing. Process aborted." with title "Minimalistic Bitwarden Backup Tool" buttons {"OK"} default button "OK" with icon stop' >/dev/null 2>&1
+fi
+
+# set default values if not found in .env
+: ${LOG_FILE:="$HOME/Library/Logs/bw-backup.log"}
+: ${BACKUP_DIR:="$HOME/Backups/Bitwarden"}
+: ${MAX_ATTEMPTS:=5}
+: ${KEEP_LAST_N:=3}
+: ${BW_SERVER:=""}
+: ${SAFETY_PHRASE:=""}
+
+log_message() {
+    local LOG_LEVEL="$1"
+    local MESSAGE="$2"
+    local TIMESTAMP=$(date "+%Y-%m-%d %H:%M:%S")
+    echo "[$TIMESTAMP] [$LOG_LEVEL] $MESSAGE" | tee -a "$LOG_FILE"
+}
+
+mkdir -p "${LOG_FILE:h}" 2>/dev/null
+touch "$LOG_FILE" 2>/dev/null && chmod 600 "$LOG_FILE" 2>/dev/null
+log_message "INFO" "----------New bakcup session starts----------"
+
+# helper functions
 
 die_gui() {
     local TIMESTAMP=$(date "+%Y-%m-%d %H:%M:%S")
@@ -23,28 +62,6 @@ kill_spinner() {
     [[ "$(ps -p "$1" -o comm= 2>/dev/null)" == *osascript* ]] && kill "$1" 2>/dev/null
 }
 
-# source variables from .env
-if [ -f "$ENV_FILE" ]; then
-    set -a
-    source "$ENV_FILE"
-    set +a
-else
-    die_gui ".env file is missing. Process aborted."
-fi
-
-# set default values if not found in .env
-: ${LOG_FILE:="$HOME/Library/Logs/bw-backup.log"}
-: ${BACKUP_DIR:="$HOME/Backups/Bitwarden"}
-: ${MAX_ATTEMPTS:=5}
-: ${KEEP_LAST_N:=3}
-
-log_message() {
-    local LOG_LEVEL="$1"
-    local MESSAGE="$2"
-    local TIMESTAMP=$(date "+%Y-%m-%d %H:%M:%S")
-    echo "[$TIMESTAMP] [$LOG_LEVEL] $MESSAGE" | tee -a "$LOG_FILE"
-}
-
 notify() {
     local title="$1" msg="$2" exec_cmd="${3:-}"
     if command -v terminal-notifier >/dev/null 2>&1; then
@@ -59,13 +76,29 @@ notify() {
     fi
 }
 
-# add permission to backup directory
-umask 077
-mkdir -p "${LOG_FILE:h}" && touch "$LOG_FILE" && chmod 600 "$LOG_FILE"
+bw_field() {
+    printf '%s' "$1" | plutil -extract "$2" raw -o - - 2>/dev/null
+}
 
-log_message "INFO" "-----New backup session begins-----"
+kc_get() {
+    security find-generic-password -a "$USER" -s "$1" -w 2>/dev/null
+}
 
-# dependency checks
+CLEANED=0
+cleanup() {
+    [ "$CLEANED" -eq 1 ] && return 0
+    CLEANED=1
+    kill_spinner "${SPINNER_PID:-}"
+    kill_spinner "${BACKUP_PID:-}"
+    [ -n "${TMP_FILE:-}" ] && rm -f "$TMP_FILE" 2>/dev/null
+    unset BW_PASSWORD BW_SESSION BW_CLIENTID BW_CLIENTSECRET
+    bw lock >/dev/null 2>&1
+    log_message "INFO" "----------cleanup done----------"
+    return 0
+}
+trap cleanup EXIT INT TERM
+
+# preflight checks
 command -v bw >/dev/null 2>&1 || die_gui "Bitwarden CLI not found. Install it with: brew install bitwarden-cli"
 command -v osascript >/dev/null 2>&1 || die_gui "osascript missing."
 
@@ -75,32 +108,30 @@ command -v terminal-notifier >/dev/null 2>&1 &&
     log_message "INFO" "terminal-notifier: $(command -v terminal-notifier)" ||
     log_message "INFO" "terminal-notifier"
 
-# check env variables
-[ -n "$BW_CLIENTID" ] && [ -n "$BW_CLIENTSECRET" ] ||
-    die_gui "Bitwarden API credentials are missing in .env"
+if [[ ! "$KEEP_LAST_N" =~ ^[0-9]+$ ]] || [ "$KEEP_LAST_N" -lt 1 ]; then
+    echo "Invalid KEEP_LAST_N ('$KEEP_LAST_N'), falling back to 3." >>"$LOG_FILE"
+    KEEP_LAST_N=3
+fi
+if [[ ! "$MAX_ATTEMPTS" =~ ^[0-9]+$ ]] || [ "$MAX_ATTEMPTS" -lt 1 ]; then
+    echo "Invalid MAX_ATTEMPTS ('$MAX_ATTEMPTS'), falling back to 5." >>"$LOG_FILE"
+    MAX_ATTEMPTS=5
+fi
 
-# make backup setup
-mkdir -p "$BACKUP_DIR" 2>/dev/null ||
-    die_gui "Cannot create backup directory: $BACKUP_DIR"
+mkdir -p "$BACKUP_DIR" 2>/dev/null || die_gui "Cannot create backup directory: $BACKUP_DIR"
 chmod 700 "$BACKUP_DIR" 2>/dev/null
 
-export BACKUP_FILE="$BACKUP_DIR/Bitwarden-Backup-$(date '+%Y-%m-%d-%H%M%S').json"
+BACKUP_FILE="$BACKUP_DIR/Bitwarden-Backup-$(date '+%Y-%m-%d-%H%M%S').json"
 TMP_FILE="${BACKUP_FILE}.part"
 
-CLEANED=0
-cleanup() {
-    [ "$CLEANED" -eq 1 ] && return
-    CLEANED=1
-    [ -n "${TMP_FILE:-}" ] && rm -f "$TMP_FILE" 2>/dev/null
-    [ -n "${PW_FILE:-}" ] && rm -P -f "$PW_FILE" 2>/dev/null
-    kill_spinner "${SPINNER_PID:-}"
-    kill_spinner "${BACKUP_PID:-}"
-    unset BW_PASSWORD BW_SESSION BW_CLIENTID BW_CLIENTSECRET
-    bw logout >/dev/null 2>&1
-    log_message "INFO" "--- cleanup done ---"
-}
-trap cleanup EXIT INT TERM
+if [ -n "$BW_SERVER" ]; then
+    CURRENT_SERVER=$(bw config server 2>/dev/null)
+    if [ "$CURRENT_SERVER" != "$BW_SERVER" ]; then
+        log_message "INFO" "Setting server: $BW_SERVER (was: ${CURRENT_SERVER:-unset})"
+        bw config server "$BW_SERVER" >>"$LOG_FILE" 2>&1 || die_gui "Failed to set server URL to $BW_SERVER"
+    fi
+fi
 
+# starting confirmation
 osascript -e 'display alert "Bitwarden Password Backup" message "You are about to backup your Bitwarden passwords.\n\nClick Proceed to enter your Master Password, or Cancel to skip." buttons {"Cancel", "Proceed"} default button "Proceed" cancel button "Cancel"'
 
 if [ $? -ne 0 ]; then
@@ -108,23 +139,54 @@ if [ $? -ne 0 ]; then
     exit 0
 fi
 
-# spinner dialog when logging in
-osascript -e 'display dialog "Logging in to Bitwarden...\nThis may take a few seconds." with title "Minimalistic Bitwarden Backup Tool" buttons {"Processing..."} default button 1 with icon note giving up after 600' >/dev/null 2>&1 &
-SPINNER_PID=$!
+# status authentication
+ensure_authentication() {
+    local st raw
+    raw=$(bw status 2>/dev/null)
+    st=$(bw_field "$raw" status)
+    log_message "INFO" "bw status: ${raw:-<empty>}"
 
-BW_OUTPUT=$(bw login --apikey 2>&1)
-LOGIN_EXIT_CODE=$?
-log_message "INFO" "$BW_OUTPUT"
+    case "$st" in
+    locked)
+        return 0
+        ;;
+    unlocked)
+        bw lock >/dev/null 2>&1
+        return 0
+        ;;
+    unauthenciated)
+        log_message "INFO" "Not authenticated. Re-authenticating from Keychain..."
+        BW_CLIENTID=$(kc_get "$KC_SERVICE_ID")
+        BW_CLIENTSECRET=$(kc_get "$KC_SERVICE_SECRET")
 
-kill_spinner "$SPINNER_PID"
+        if [ -z "$BW_CLIENTID" ] || [ -z "$BW_CLIENTSECRET" ]; then
+            die_gui "Your Bitwarden CLI login has expired, and the API key was not found in your keychain. Run ./setup.sh to store it."
+        fi
 
-if [ $LOGIN_EXIT_CODE -eq 1 ]; then
-    die_gui "client_id or client_secret is incorrect. Please check your .env settings. Process aborted."
-elif [ $LOGIN_EXIT_CODE -ne 0 ]; then
-    die_gui "Login failed with exit code $LOGIN_EXIT_CODE."
+        export BW_CLIENTID BW_CLIENTSECRET
+        if ! bw login --apikey </dev/null >>"$LOG_FILE" 2>&1; then
+            unset BW_CLIENTID BW_CLIENTSECRET
+            die_gui "Re-authentication failed. Your API key might have been rotated or revoked. Check Web Vault > Settings > Security > Keys, then run ./setup.sh again."
+        fi
+        unset BW_CLIENTID BW_CLIENTSECRET
+        REAUTH_HAPPENED=1
+        return 0
+        ;;
+    *)
+        die_gui "Unexpected Bitwarden status: '${st:-empty}'. See $LOG_FILE for details."
+        ;;
+    esac
+}
+
+ensure_authentication
+
+# main password
+if [ -n "$SAFETY_PHRASE" ]; then
+    HEADER="Safety Phrase: $SAFETY_PHRASE"
+else
+    HEADER="Warning: SAFETY_PHRASE not set — see README"
 fi
 
-# prompt message assembly
 BW_EMAIL=$(bw status 2>/dev/null | sed -n 's/.*"userEmail":"\([^"]*\)".*/\1/p')
 LAST_BACKUP=$(ls -t "$BACKUP_DIR"/Bitwarden-Backup-*.json 2>/dev/null | head -1)
 if [ -n "$LAST_BACKUP" ]; then
@@ -133,134 +195,163 @@ else
     LAST_DATE="(no previous backup)"
 fi
 
-if [ -n "$SAFETY_PHRASE" ]; then
-    HEADER="Safety Phrase: $SAFETY_PHRASE"
-else
-    HEADER="Warning: SAFETY_PHRASE not set — see README"
-fi
-
-PROMPT_TEXT="$HEADER
+BASE_PROMPT="$HEADER
 
 Account: ${BW_EMAIL:-unknown}
 Last backup: $LAST_DATE
-Backing up to: $BACKUP_DIR
+Backing up to: $BACKUP_DIR"
+
+PROMPT_TEXT="$BASE_PROMPT
 
 Enter your master password:"
 
-# handle master password authentication and session key issue
-ATTEMPT=1
-SESSION_RETRY=0
 while [ $ATTEMPT -le $MAX_ATTEMPTS ]; do
-    BW_PASSWORD=$(osascript -e "display dialog \"$PROMPT_TEXT\" default answer \"\" with title \"Minimalistic Bitwarden Backup Tool\" with icon caution with hidden answer" -e "text returned of result")
+    BW_PASSWORD=$(
+        osascript - "$PROMPT_TEXT" <<'OSA' 2>>"$LOG_FILE"
+on run argv
+    set r to display dialog (item 1 of argv) default answer "" ¬
+        with title "Minimalistic Bitwarden Backup Tool" ¬
+        with icon caution with hidden answer
+    return text returned of r
+end run
+OSA
+    )
     DIALOG_EXIT=$?
     export BW_PASSWORD
+
     if [ $DIALOG_EXIT -ne 0 ]; then
-        log_message "INFO" "Process cancelled by user."
-        exit 0
+        log_message "ERROR" "Process cancelled by user."
+        exit 1
+    fi
+    if [ -z "$BW_PASSWORD" ]; then
+        PROMPT_TEXT="$BASE_PROMPT
+
+Password cannot be empty. Please try again:"
+        continue
     fi
 
-    BW_SESSION=$(bw unlock --passwordenv BW_PASSWORD --raw)
+    BW_SESSION=$(bw unlock --passwordenv BW_PASSWORD --raw 2>>"$LOG_FILE")
     EXIT_CODE=$?
-    log_message "INFO" "$BW_SESSION"
 
-    # invalid master password, accumulate attempts
     if [ "$EXIT_CODE" -eq 1 ]; then
-        if [ $ATTEMPT -eq $MAX_ATTEMPTS ]; then
-            osascript -e 'display dialog "Too many incorrect attempts. Backup Aborted." buttons {"OK"} default button "OK" with icon stop'
+        if [ $ATTEMPT -ge $MAX_ATTEMPTS ]; then
             log_message "ERROR" "Process terminated due to too many failed attempts."
-            exit 1
+            die_gui "Too many incorrect attempts. Backup aborted."
         fi
-
         REMAINING=$((MAX_ATTEMPTS - ATTEMPT))
-        PROMPT_TEXT="Incorrect password. ($REMAINING attempts remaining)\n\nPlease try again:"
-        log_message "INFO" "Invalid Password. Attempts ($ATTEMPT / $MAX_ATTEMPTS)."
+        PROMPT_TEXT="$BASE_PROMPT
+
+Incorrect password. ($REMAINING attempts remaining)
+Please try again:"
+        log_message "INFO" "Invalid password. Attempt $ATTEMPT / $MAX_ATTEMPTS."
         ((ATTEMPT++))
         continue
 
-    # other possible errors
     elif [ "$EXIT_CODE" -ne 0 ]; then
-        log_message "ERROR" "Unlock failed. Error message from Bitwarden: $BW_SESSION"
-        exit 1
+        log_message "ERROR" "Unlock failed with exit code $EXIT_CODE."
+        die_gui "Unlock failed with exit code $EXIT_CODE.
+
+See $LOG_FILE for details."
     fi
 
-    # sometimes Bitwarden doesn't provide the session key even when the exit code is 0
-    # this block checks for an empty session key and reprompt login.
     if [ -z "$BW_SESSION" ]; then
         ((SESSION_RETRY++))
-        if [ $SESSION_RETRY -gt 3 ]; then
-            log_message "ERROR" "Bitwarden repeatedly returned an empty session. Peocess aborted."
-            die_gui "Bitwarden repeatedly returned an empty session, Aborting."
+        log_message "INFO" "Empty session key (retry $SESSION_RETRY / $MAX_SESSION_RETRY)."
+        if [ $SESSION_RETRY -ge $MAX_SESSION_RETRY ]; then
+            log_message "ERROR" "Bitwarden repeatedly returned an empty session key. Process aborted."
+            die_gui "Bitwarden repeatedly returned an empty session key.
+
+See $LOG_FILE for details."
         fi
-        log_message "ERROR" "BW_SESSION not found. Retry login..."
-        log_message "ERROR" "$(bw status 2>&1)"
-        osascript -e 'display dialog "Bitwarden session key not found. Retry login. Click OK to try again or Cancel to abort." buttons {"Cancel", "OK"} default button "OK" cancel button "Cancel" with icon stop'
-        if [ $? -ne 0 ]; then
-            log_message "INFO" "Process cancelled by user."
-            exit 0
-        fi
-        BW_OUTPUT=$(bw login --apikey 2>&1)
-        log_message "INFO" "$BW_OUTPUT"
+        bw lock >/dev/null 2>&1
+        sleep 1
         continue
     fi
 
-    # if nothing goes wrong, export the session key for later use.
     export BW_SESSION
     break
 done
 
+if [ -z "$BW_SESSION" ]; then
+    die_gui "Failed to obtain a session key. Process aborted."
+fi
+
+# syncing
 unset BW_CLIENTID
 unset BW_CLIENTSECRET
 
 osascript -e 'display dialog "Authentication succeeded. Backup has started. You will be notified when the process is completed. You can close this dialog." with title "Minimalistic Bitwarden Backup Tool" buttons {"OK"} default button "OK" with icon note' >/dev/null 2>&1 &
 BACKUP_PID=$!
 
+log_message "INFO" "Syncing vault..."
+bw sync -f >>"LOG_FILE" 2>&1
+SYNC_RC=$?
+
+STATUS_JSON=$(bw status 2>/dev/null)
+LAST_SYNC=$(bw_field "$STATUS_JSON" lastSync)
+log_message "INFO" "post-sync status: $STATUS_JSON"
+
+# check last sync to prevent an empty vault
+if [ -z "$LAST_SYNC" ] || [ "$LAST_SYNC" = "null" ]; then
+    die_gui "The vault has never synced (lastSync is null).
+
+Aborting to prevent overwritting existing backups.
+Try this in Terminal:
+    bw sync -f"
+fi
+
+if [ $SYNC_RC -ne 0 ]; then
+    log_message "WARNING" "sync -f returned $SYNC_RC, using cached data from $LAST_SYNC"
+    SYNC_WARNING=" (offline, cached)"
+fi
+
+ITEM_COUNT=$(bw list items 2>>"$LOG_FILE" | grep -o '"object":"item"' | wc -l | tr -d ' ')
+log_message "INFO" "Vault contains $ITEM_COUNT items."
+
+if [ -z "$ITEM_COUNT" ] || [ "$ITEM_COUNT" -lt 1 ]; then
+    die_gui "The vault reports 0 items. Refusing to create a backup.
+
+This usually means the vault did not sync correctly."
+fi
+
+# exporting
 # export to encrypted json file protected by the master password
 EXPORT_OUTPUT=$(bw export --format encrypted_json --password "$BW_PASSWORD" --output "$TMP_FILE" 2>&1)
 EXPORT_EXIT_CODE=$?
+unset BW_PASSWORD
 log_message "INFO" "$EXPORT_OUTPUT"
 
-# check the content
-if [ $EXPORT_EXIT_CODE -eq 0 ] && [ -s "$TMP_FILE" ] &&
-    grep -q '"encrypted"' "$TMP_FILE"; then
-    chmod 600 "$TMP_FILE"
-    mv -f "$TMP_FILE" "$BACKUP_FILE"
-else
-    rm -f "$TMP_FILE"
-    EXPORT_EXIT_CODE=1
+if [ $EXPORT_EXIT_CODE -ne 0 ] || [ ! -s "$TMP_FILE" ]; then
+    log_message "ERROR" "Backup failed (exit $EXPORT_EXIT_CODE)."
+    die_gui "Backup failed. See $LOG_FILE for details."
 fi
 
-# count bakcup items and warn about potentially lost items
-ITEM_COUNT=$(bw list items | grep -o '"object":"item"' | wc -l | tr -d ' ')
-log_message "INFO" "Vault contains $ITEM_COUNT items."
-
-# handle potential export errors
-if [ $EXPORT_EXIT_CODE -eq 0 ]; then
-    log_message "INFO" "Backup completed. Backup file stored at $BACKUP_FILE"
-else
-    log_message "ERROR" "Backup failed."
-    kill_spinner "$BACKUP_PID"
-    die_gui "Backup failed."
+if ! grep -q '"encrypted"' "$TMP_FILE"; then
+    log_message "ERROR" "Export produced an invalid file."
+    die_gui "The exported file failed validation and was discarded."
 fi
 
-# cd to the backup directory. stop immediately if directory not found to prevent unexpected deletion.
-cd "$BACKUP_DIR" || {
-    log_message "ERROR" "Cannot find backup directory. Process aborted."
-    kill_spinner "$BACKUP_PID"
-    die_gui -"Cannot find backup directory. Process aborted."
-}
+chmod 600 "$TMP_FILE" 2>/dev/null
+mv -f "$TMP_FILE" "$BACKUP_FILE" || die_gui "Failed to finalize backup file."
+TMP_FILE=""
+log_message "INFO" "Backup completed: $BACKUP_FILE ($ITEM_COUNT items)"
 
-# keep the last n files and delete older backups
-if [[ ! "$KEEP_LAST_N" =~ ^[0-9]+$ ]] || [ "$KEEP_LAST_N" -lt 1 ]; then
-    log_message "WARNING" "Invalid KEEP_LAST_N ('$KEEP_LAST_N'), fallback to 3."
-    KEEP_LAST_N=3
-fi
-
+cd "$BACKUP_DIR" || die_gui "Cannot enter backup directory. Rotation skipped."
 TAIL_START=$(($KEEP_LAST_N + 1))
-ls -t Bitwarden-Backup-*.json 2>/dev/null | tail -n +$TAIL_START | while IFS= read -r f; do
-    rm -- "$f" && log_message "INFO" "Rotated out: $f"
+ls -t Bitwarden-Backup-*.json 2>/dev/null | tail -n +"$TAIL_START" | while IFS= read -r old; do
+    rm -- "$old" && log_message "INFO" "Rotated out: $old"
 done
 
 kill_spinner "$BACKUP_PID"
 
 # notify user about completion
-notify "Minimalistic Bitwarden Backup Tool" "Backup complete ($ITEM_COUNT items are stored to $BACKUP_FILE).  Click to open the backup folder." "open '$BACKUP_DIR'"
+notify "Minimalistic Bitwarden Backup Tool" \
+    "Backup complete — $ITEM_COUNT items${SYNC_WARNING}. Click to open the backup folder." \
+    "open '$BACKUP_DIR'"
+
+if [ "$REAUTH_HAPPENED" -eq 1 ]; then
+    notify "Bitwarden Backup" \
+        "Note: your CLI login had expired and was renewed automatically. If you did not change your master password or deauthorize sessions recently, check your account."
+fi
+
+exit 0
