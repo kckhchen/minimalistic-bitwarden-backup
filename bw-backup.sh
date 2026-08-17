@@ -154,7 +154,7 @@ ensure_authentication() {
         bw lock >/dev/null 2>&1
         return 0
         ;;
-    unauthenciated)
+    unauthenticated)
         log_message "INFO" "Not authenticated. Re-authenticating from Keychain..."
         BW_CLIENTID=$(kc_get "$KC_SERVICE_ID")
         BW_CLIENTSECRET=$(kc_get "$KC_SERVICE_SECRET")
