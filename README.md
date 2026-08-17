@@ -7,6 +7,9 @@ This is a lightweight automated shell script tool that backups your Bitwarden va
 
 Although Bitwarden [stores local cache for 30 days](https://bitwarden.com/blog/configuring-bitwarden-clients-for-offline-access/#staying-logged-in-to-browser-extension-desktop-and-mobile-clients) when you go offline, it always gives a peace of mind if you know you have a secure local backup copy in your hard drive or USB thumb drive. It's also hard to keep track of all your backups, or you might completely forget to backup your passwords sometimes. This might be the solution.
 
+> [!important]
+> Please manually log out of Bitwaden with `bw logout` after updating Bitwarden CLI to prevent potential token issue.
+
 ## Features
 
 - **GUI Prompts:** Uses macOS native dialogs to request the master password and send notifications. No typing passwords into the terminal.
@@ -68,14 +71,14 @@ Copy the `.env.example` file in the repository and rename it `.env` before confi
 cp .env.example .env
 ```
 
-| Name            | Description                                                                                 | Default                   |
-| --------------- | ------------------------------------------------------------------------------------------- | ------------------------- |
-| `BACKUP_DIR`    | Directory to store your backup files                                                        | `$HOME/Backups/Bitwarden` |
-| `LOG_FILE`      | Path to the log file                                                                        | `/tmp/bw-backup.log`      |
-| `MAX_ATTEMPTS`  | Maximum attempts of password before the process aborts                                      | 5                         |
-| `KEEP_LAST_N`   | Number of backups to keep                                                                   | 3                         |
-| `SAFETY_PHRASE` | A phrase to let you know it is this tool prompting you for the password                     | none                      |
-| `BW_SERVER`     | Your custom Bitwarden server. If you use the official Bitwarden, plese leave it as a blank. | none                      |
+| Name            | Description                                                                                 | Default                            |
+| --------------- | ------------------------------------------------------------------------------------------- | ---------------------------------- |
+| `BACKUP_DIR`    | Directory to store your backup files                                                        | `$HOME/Backups/Bitwarden`          |
+| `LOG_FILE`      | Path to the log file                                                                        | `$HOME/Library/Logs/bw-backup.log` |
+| `MAX_ATTEMPTS`  | Maximum attempts of password before the process aborts                                      | 5                                  |
+| `KEEP_LAST_N`   | Number of backups to keep                                                                   | 3                                  |
+| `SAFETY_PHRASE` | A phrase to let you know it is this tool prompting you for the password                     | none                               |
+| `BW_SERVER`     | Your custom Bitwarden server. If you use the official Bitwarden, plese leave it as a blank. | none                               |
 
 ### Installation
 
